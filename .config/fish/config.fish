@@ -5,12 +5,18 @@ end
 set -gx PATH "/home/jaeyong/.cargo/bin" $PATH
 set -gx PATH "/home/linuxbrew/.linuxbrew/bin" $PATH
 set -gx PATH $PATH "/home/jaeyong/.local/bin"
-set -gx PATH $PATH "/usr/local/go/bin"
-set -gx PATH $PATH "/home/jaeyong/go/bin"
+set -gx PATH $PATH /usr/local/go/bin
+set -gx PATH $PATH /home/jaeyong/go/bin
+set -Ux PYENV_ROOT $HOME/.pyenv
+set -U fish_user_paths $PYENV_ROOT/bin $fish_user_paths
+set -gx EDITOR nvim
 # set -gx LC_CTYPE en_US.UTF-8
 # set -gx LC_ALL en_US.UTF-8
 # set -gx LANGUAGE en_US.UTF-8
 # set -gx LANG en_US.UTF-8
+alias vim=nvim
+alias ls=eza
+set -gx RUSTFLAGS "-Z threads=12"
 
 function backup
     sudo cp -r /home/jaeyong /mnt/data/backup
@@ -20,7 +26,7 @@ function up
     for i in *
         if test -d $i
             cd $i
-            docker-compose up -d 2> /dev/null || up
+            docker-compose up -d 2>/dev/null || up
             cd ..
         end
     end
@@ -38,7 +44,7 @@ function down
     for i in *
         if test -d $i
             cd $i
-            docker-compose down 2> /dev/null || down
+            docker-compose down 2>/dev/null || down
             cd ..
         end
     end
@@ -52,4 +58,4 @@ function deinit
 end
 
 starship init fish | source
-
+pyenv init - | source
