@@ -2,19 +2,25 @@ if status is-interactive
     # Commands to run in interactive sessions can go here
 end
 
-set -gx PATH "/home/jaeyong/.cargo/bin" $PATH
-set -gx PATH "/home/linuxbrew/.linuxbrew/bin" $PATH
-set -gx PATH $PATH "/home/jaeyong/.local/bin"
-set -gx PATH $PATH /usr/local/go/bin
-set -gx PATH $PATH /home/jaeyong/go/bin
-set -Ux PYENV_ROOT $HOME/.pyenv
+switch (uname)
+    case Linux
+        set -gx PATH "/home/linuxbrew/.linuxbrew/bin" $PATH
+        set -gx PATH $PATH "$HOME/go/bin"
+    case Darwin
+        set -gx PATH /opt/homebrew/bin $PATH
+        set -gx PATH $PATH /usr/local/go/bin
+end
+
+set -gx PATH "$HOME/.cargo/bin" $PATH
+set -gx PATH $PATH "$HOME/.local/bin"
+set -Ux PYENV_ROOT "$HOME/.pyenv"
 set -U fish_user_paths $PYENV_ROOT/bin $fish_user_paths
 set -gx EDITOR nvim
 set -gx LC_CTYPE en_US.UTF-8
 set -gx LC_ALL en_US.UTF-8
 set -gx LANGUAGE en_US.UTF-8
 set -gx LANG en_US.UTF-8
-# set -gx RUSTFLAGS "-Z threads=12"
+set -gx RUSTFLAGS "-Z threads=12"
 
 
 function echo-yellow
