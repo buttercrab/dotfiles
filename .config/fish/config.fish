@@ -29,6 +29,7 @@ set -gx LC_CTYPE en_US.UTF-8
 set -gx LC_ALL en_US.UTF-8
 set -gx LANGUAGE en_US.UTF-8
 set -gx LANG en_US.UTF-8
+set -gx RUSTFLAGS "-Z threads=12"
 
 function echo-yellow
     echo "$(set_color yellow)>> $argv$(set_color normal)"
@@ -44,8 +45,8 @@ function docker-up
             cd $i
             if test -f docker-compose.yaml || test -f docker-compose.yml
                 echo-yellow "up $i"
-                docker-compose pull >/tmp/docker-pull-$i.log 2>&1 || cat /tmp/docker-pull-$i.log
-                docker-compose up -d >/tmp/docker-up-$i.log 2>&1 || cat /tmp/docker-up-$i.log
+                docker compose pull >/tmp/docker-pull-$i.log 2>&1 || cat /tmp/docker-pull-$i.log
+                docker compose up -d >/tmp/docker-up-$i.log 2>&1 || cat /tmp/docker-up-$i.log
             else if test -f docker-compose.yaml.inactive || test -f docker-compose.yml.inactive
                 echo-yellow "skip $i"
             else
@@ -71,7 +72,7 @@ function docker-down
             cd $i
             if test -f docker-compose.yaml || test -f docker-compose.yml
                 echo-yellow "down $i"
-                docker-compose down >/tmp/docker-down-$i.log 2>&1 || cat /tmp/docker-down-$i.log
+                docker compose down >/tmp/docker-down-$i.log 2>&1 || cat /tmp/docker-down-$i.log
             else if test -f docker-compose.yaml.inactive || test -f docker-compose.yml.inactive
                 echo-yellow "skip $i"
             else
