@@ -10,7 +10,7 @@ switch (uname)
         set -gx PATH $PATH /usr/local/go/bin
         set -gx PATH $PATH /opt/homebrew/anaconda3/bin
         set -gx PATH /opt/homebrew/opt/ruby/bin $PATH
-        set -gx PATH /opt/homebrew/lib/ruby/gems/3.4.0/bin $PATH
+        set -gx PATH /opt/homebrew/lib/ruby/gems/3.3.5/bin $PATH
         set -gx PATH /opt/homebrew/opt/postgresql@17/bin $PATH
         set -gx PATH $PATH "$HOME/Library/Application Support/JetBrains/Toolbox/scripts"
         #set -gx PATH $PATH $HOME/chromium/depot_tools
@@ -114,20 +114,3 @@ end
 
 # Added by Windsurf
 fish_add_path /Users/jaeyong/.codeium/windsurf/bin
-
-# The next line updates PATH for the Google Cloud SDK.
-if [ -f '/Users/jaeyong/google-cloud-sdk/path.fish.inc' ]
-    . '/Users/jaeyong/google-cloud-sdk/path.fish.inc'
-end
-
-# bun
-set --export BUN_INSTALL "$HOME/.bun"
-set --export PATH $BUN_INSTALL/bin $PATH
-
-alias claude="/Users/jaeyong/.claude/local/claude"
-
-# Added by LM Studio CLI (lms)
-set -gx PATH $PATH /Users/jaeyong/.lmstudio/bin
-# End of LM Studio CLI section
-
-direnv hook fish | source
