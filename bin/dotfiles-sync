@@ -7,8 +7,10 @@ BRANCH=${DOTFILES_SYNC_BRANCH:-main}
 LOG_DIR=${DOTFILES_SYNC_LOG_DIR:-$HOME/.local/state}
 LOG_FILE=${DOTFILES_SYNC_LOG_FILE:-$LOG_DIR/dotfiles-sync.log}
 LOCK_DIR=${DOTFILES_SYNC_LOCK_DIR:-$HOME/.cache/dotfiles-sync.lock}
+LOCK_STALE_SEC=${DOTFILES_SYNC_LOCK_STALE_SEC:-1800}
 PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
 export PATH
+SYNC_PATHS=".gitignore README.md bootstrap.sh install.sh bin config home examples vendor"
 
 mkdir -p "$LOG_DIR"
 mkdir -p "$(dirname "$LOCK_DIR")"
@@ -19,17 +21,173 @@ timestamp() {
 
 log() {
     line="$(timestamp) $*"
-    printf '%s\n' "$line" | tee -a "$LOG_FILE"
+    printf '%s\n' "$line" >>"$LOG_FILE"
+    if [ -t 1 ]; then
+        printf '%s\n' "$line"
+    fi
 }
 
 cleanup() {
-    rmdir "$LOCK_DIR" 2>/dev/null || true
+    rm -rf "$LOCK_DIR" 2>/dev/null || true
 }
 
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-    log "skip  sync already running"
-    exit 0
-fi
+lock_pid_path="$LOCK_DIR/pid"
+lock_started_path="$LOCK_DIR/started_at"
+
+usage() {
+    printf 'Usage: %s [--unlock]\n' "$0" >&2
+    exit 1
+}
+
+case "${1-}" in
+    "")
+        ;;
+    --unlock)
+        rm -rf "$LOCK_DIR"
+        log "done  sync lock removed"
+        exit 0
+        ;;
+    *)
+        usage
+        ;;
+esac
+
+acquire_lock() {
+    now_epoch=$(date +%s)
+
+    if [ -d "$LOCK_DIR" ]; then
+        existing_pid=
+        existing_started=
+
+        if [ -r "$lock_pid_path" ]; then
+            existing_pid=$(cat "$lock_pid_path" 2>/dev/null || true)
+        fi
+        if [ -r "$lock_started_path" ]; then
+            existing_started=$(cat "$lock_started_path" 2>/dev/null || true)
+        fi
+
+        if [ -n "${existing_started:-}" ]; then
+            lock_age=$((now_epoch - existing_started))
+        else
+            lock_age=$LOCK_STALE_SEC
+        fi
+
+        if [ -n "${existing_pid:-}" ] && kill -0 "$existing_pid" 2>/dev/null; then
+            log "skip  sync already running (pid $existing_pid)"
+            exit 0
+        fi
+
+        rm -rf "$LOCK_DIR"
+        if [ "$lock_age" -ge "$LOCK_STALE_SEC" ]; then
+            log "warn  recovered stale sync lock older than ${LOCK_STALE_SEC}s"
+        else
+            log "warn  recovered dead sync lock"
+        fi
+    fi
+
+    mkdir "$LOCK_DIR"
+    printf '%s\n' "$$" >"$lock_pid_path"
+    printf '%s\n' "$now_epoch" >"$lock_started_path"
+}
+
+allowed_status() {
+    # shellcheck disable=SC2086
+    git status --porcelain --untracked-files=all -- $SYNC_PATHS
+}
+
+has_allowed_changes() {
+    [ -n "$(allowed_status)" ]
+}
+
+ensure_no_nested_git() {
+    nested_paths=$(find "$ROOT" -mindepth 2 \( -type d -name .git -o -type f -name .git \) -print)
+    if [ -n "$nested_paths" ]; then
+        log "error nested git repository detected under $ROOT"
+        printf '%s\n' "$nested_paths" >>"$LOG_FILE"
+        exit 1
+    fi
+}
+
+ensure_safe_untracked() {
+    blocked=0
+    while IFS= read -r status_line; do
+        case "$status_line" in
+            '?? '*)
+                untracked_path=${status_line#?? }
+                case "$untracked_path" in
+                    *.env|*.pem|*.key|*.crt|*.p12|*.pfx|*.kdbx|*.sqlite|*.db|*.log|*.tmp|*.bak|*secret*|*token*|*credential*)
+                        log "error blocked untracked path: $untracked_path"
+                        blocked=1
+                        ;;
+                esac
+                ;;
+        esac
+    done <<EOF
+$(allowed_status)
+EOF
+
+    if [ "$blocked" -ne 0 ]; then
+        exit 1
+    fi
+}
+
+stash_ref=
+
+stash_allowed_changes() {
+    if ! has_allowed_changes; then
+        return 0
+    fi
+
+    ensure_no_nested_git
+    ensure_safe_untracked
+
+    stash_before=$(git stash list --format='%H' | head -n 1 || true)
+    log "stash local repo changes"
+    # shellcheck disable=SC2086
+    git stash push --include-untracked -m "dotfiles-sync-autostash" -- $SYNC_PATHS >>"$LOG_FILE" 2>&1 || true
+    stash_after=$(git stash list --format='%H' | head -n 1 || true)
+
+    if [ -n "$stash_after" ] && [ "$stash_after" != "$stash_before" ]; then
+        stash_ref=stash@{0}
+    fi
+}
+
+restore_stash() {
+    [ -n "$stash_ref" ] || return 0
+
+    log "restore local repo changes"
+    if ! git stash pop "$stash_ref" >>"$LOG_FILE" 2>&1; then
+        log "error stash restore failed; manual resolution required"
+        exit 1
+    fi
+}
+
+run_bootstrap() {
+    log "apply bootstrap"
+    "$ROOT/bootstrap.sh" >>"$LOG_FILE" 2>&1
+}
+
+commit_allowed_changes() {
+    if ! has_allowed_changes; then
+        log "skip  no repo changes to commit"
+        return 0
+    fi
+
+    ensure_no_nested_git
+    ensure_safe_untracked
+
+    log "commit local changes"
+    # shellcheck disable=SC2086
+    git add -- $SYNC_PATHS
+    if git diff --cached --quiet --ignore-submodules --; then
+        log "skip  nothing staged after add"
+        return 0
+    fi
+
+    git -c commit.gpgsign=false commit -m "$commit_message" >>"$LOG_FILE" 2>&1
+}
+
+acquire_lock
 trap cleanup EXIT INT TERM HUP
 
 cd "$ROOT"
@@ -49,26 +207,7 @@ machine_name=$(hostname -s 2>/dev/null || hostname 2>/dev/null || uname -n)
 commit_time=$(date '+%Y-%m-%dT%H:%M:%S%z')
 commit_message="auto(dotfiles): ${machine_name} ${commit_time}"
 
-is_dirty=0
-if ! git diff --quiet --ignore-submodules --; then
-    is_dirty=1
-fi
-if ! git diff --cached --quiet --ignore-submodules --; then
-    is_dirty=1
-fi
-if [ -n "$(git ls-files --others --exclude-standard)" ]; then
-    is_dirty=1
-fi
-
-if [ "$is_dirty" -eq 1 ]; then
-    log "commit local changes"
-    git add -A
-    if git diff --cached --quiet --ignore-submodules --; then
-        log "skip  nothing staged after add"
-    else
-        git -c commit.gpgsign=false commit -m "$commit_message" >>"$LOG_FILE" 2>&1
-    fi
-fi
+stash_allowed_changes
 
 log "fetch $REMOTE/$BRANCH"
 git fetch "$REMOTE" "$BRANCH" >>"$LOG_FILE" 2>&1
@@ -79,6 +218,13 @@ if ! git rebase "$REMOTE/$BRANCH" >>"$LOG_FILE" 2>&1; then
     log "error rebase failed; manual resolution required"
     exit 1
 fi
+
+run_bootstrap
+restore_stash
+if [ -n "$stash_ref" ]; then
+    run_bootstrap
+fi
+commit_allowed_changes
 
 log "push $REMOTE $BRANCH"
 if ! git push "$REMOTE" "$BRANCH" >>"$LOG_FILE" 2>&1; then

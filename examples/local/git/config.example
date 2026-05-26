@@ -1,2 +1,8 @@
 [user]
     signingkey = REPLACE_ME
+[user]
+    name = Your Name
+    email = you@example.com
+    signingkey = REPLACE_ME
+[commit]
+    gpgsign = true

@@ -45,6 +45,25 @@ set_mode() {
     fi
 }
 
+set_file_mode_in_dir() {
+    file_dir=$1
+    file_mode=$2
+
+    [ -d "$file_dir" ] || return 0
+
+    old_ifs=$IFS
+    IFS='
+'
+    for file_path in $(find "$file_dir" -maxdepth 1 -type f -print | LC_ALL=C sort); do
+        if [ "$dry_run" -eq 1 ]; then
+            log "[dry-run] chmod $file_mode $file_path"
+        else
+            chmod "$file_mode" "$file_path"
+        fi
+    done
+    IFS=$old_ifs
+}
+
 ensure_backup_root() {
     if [ "$BACKUP_READY" -eq 1 ]; then
         return 0
@@ -210,6 +229,9 @@ set_mode "$HOME/.config/local/env.d" 700
 set_mode "$HOME/.config/local/fish" 700
 set_mode "$HOME/.config/local/fish/conf.d" 700
 set_mode "$HOME/.config/local/git" 700
+set_file_mode_in_dir "$HOME/.config/local/env.d" 600
+set_file_mode_in_dir "$HOME/.config/local/git" 600
+set_file_mode_in_dir "$HOME/.config/local/fish/conf.d" 600
 
 link_path "$ROOT/home/.profile" "$HOME/.profile" ".profile"
 link_path "$ROOT/home/.bash_profile" "$HOME/.bash_profile" ".bash_profile"

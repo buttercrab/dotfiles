@@ -14,7 +14,7 @@ Public, portable defaults for `~/dotfiles`.
 
 - Secrets and machine-specific overrides live outside the repo under `~/.config/local/`
 - Generated state does not belong in the repo
-- Clone to `~/dotfiles`, then run `./install.sh`
+- Clone the repo, then run `./install.sh`
 - `bootstrap.sh` syncs vendored fish plugin files for offline startup; refresh plugins manually later with `fish -lc 'fisher update'`
 
 ## Install
@@ -25,22 +25,44 @@ cd ~/dotfiles
 ./install.sh
 ```
 
-`install.sh` does two things:
+`install.sh` bootstraps links and writes `~/.config/dotfiles/install.env` so shells know the installed repo root.
 
-- runs `./bootstrap.sh`
-- installs an always-on auto-sync job for this user
+To enable background sync explicitly:
+
+```sh
+./install.sh --enable-sync
+```
+
+To disable background sync:
+
+```sh
+./install.sh --disable-sync
+```
 
 ## Auto Sync
 
-The sync loop runs on load and every 5 minutes by default.
+Auto-sync is opt-in. When enabled, it runs on load and every 5 minutes by default.
 
 Per run it will:
 
-1. auto-commit local public-repo changes if the repo is dirty
-2. `git fetch origin main`
-3. `git rebase origin/main`
-4. `git push origin main`
+1. `git fetch origin main`
+2. `git rebase origin/main`
+3. rerun `bootstrap.sh` so pulled changes become live
+4. auto-commit approved public-repo paths if they changed locally
+5. `git push origin main`
 
-If rebase or push fails, it stops and retries on the next run. It never force-pushes.
+Sync only stages repo-owned paths: `.gitignore`, `README.md`, `bootstrap.sh`, `install.sh`, `bin/`, `config/`, `home/`, `examples/`, and `vendor/`.
+
+If rebase or push fails, it stops and retries on the next run. It never force-pushes. If a stale sync lock remains after a crash, run:
+
+```sh
+~/dotfiles/bin/dotfiles-sync --unlock
+```
 
 Private files under `~/.config/local` are not part of auto-sync.
+
+## Notes
+
+- macOS sync uses a user `LaunchAgent`, so it starts after user login.
+- Linux sync uses `systemd --user`; reboot persistence depends on the user manager and, when available, linger.
+- Background auto-commits are intentionally unsigned; keep personal identity and signing settings in `~/.config/local/git/config`.
