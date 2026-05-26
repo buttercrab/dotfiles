@@ -7,6 +7,8 @@ BRANCH=${DOTFILES_SYNC_BRANCH:-main}
 LOG_DIR=${DOTFILES_SYNC_LOG_DIR:-$HOME/.local/state}
 LOG_FILE=${DOTFILES_SYNC_LOG_FILE:-$LOG_DIR/dotfiles-sync.log}
 LOCK_DIR=${DOTFILES_SYNC_LOCK_DIR:-$HOME/.cache/dotfiles-sync.lock}
+PATH="$HOME/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/usr/bin:/bin:/usr/sbin:/sbin${PATH:+:$PATH}"
+export PATH
 
 mkdir -p "$LOG_DIR"
 mkdir -p "$(dirname "$LOCK_DIR")"
@@ -64,7 +66,7 @@ if [ "$is_dirty" -eq 1 ]; then
     if git diff --cached --quiet --ignore-submodules --; then
         log "skip  nothing staged after add"
     else
-        git commit -m "$commit_message" >>"$LOG_FILE" 2>&1
+        git -c commit.gpgsign=false commit -m "$commit_message" >>"$LOG_FILE" 2>&1
     fi
 fi
 
