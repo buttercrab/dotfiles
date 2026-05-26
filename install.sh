@@ -53,11 +53,16 @@ ensure_state_dir() {
 }
 
 load_installed_root() {
+    installed_root=
     if [ -r "$INSTALL_ENV" ]; then
-        # shellcheck disable=SC1090
-        . "$INSTALL_ENV"
+        installed_root=$(
+            DOTFILES_ROOT=
+            # shellcheck disable=SC1090
+            . "$INSTALL_ENV"
+            printf '%s\n' "${DOTFILES_ROOT:-}"
+        )
     fi
-    printf '%s\n' "${DOTFILES_ROOT:-}"
+    printf '%s\n' "$installed_root"
 }
 
 write_install_env() {

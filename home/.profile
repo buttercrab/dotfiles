@@ -8,7 +8,7 @@ if [ -r "$HOME/.config/dotfiles/install.env" ]; then
     . "$HOME/.config/dotfiles/install.env"
 fi
 
-export DOTFILES_PROFILE_SOURCED=1
+DOTFILES_PROFILE_SOURCED=1
 export DOTFILES_ROOT="${DOTFILES_ROOT:-$HOME/dotfiles}"
 
 dotfiles_add_path() {
