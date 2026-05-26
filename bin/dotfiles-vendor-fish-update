@@ -1,0 +1,55 @@
+#!/bin/sh
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+SOURCE_ROOT=${DOTFILES_FISH_SOURCE_ROOT:-$HOME/.config/fish}
+MANIFEST="$ROOT/vendor/fish/manifest.txt"
+
+usage() {
+    cat <<'EOF' >&2
+Usage: dotfiles-vendor-fish-update [--source DIR]
+
+Refreshes vendored fish plugin files from the local fish config using
+vendor/fish/manifest.txt as the authoritative file list.
+EOF
+    exit 1
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --source)
+            shift
+            [ $# -gt 0 ] || usage
+            SOURCE_ROOT=$1
+            ;;
+        *)
+            usage
+            ;;
+    esac
+    shift
+done
+
+[ -f "$MANIFEST" ] || {
+    printf 'error missing manifest: %s\n' "$MANIFEST" >&2
+    exit 1
+}
+
+old_ifs=$IFS
+IFS='
+'
+for rel_path in $(cat "$MANIFEST"); do
+    [ -n "$rel_path" ] || continue
+    src="$SOURCE_ROOT/$rel_path"
+    dest="$ROOT/vendor/fish/$rel_path"
+    mkdir -p "$(dirname "$dest")"
+    if [ ! -f "$src" ]; then
+        printf 'error missing source file: %s\n' "$src" >&2
+        exit 1
+    fi
+    cp "$src" "$dest"
+    chmod 644 "$dest"
+    printf 'updated %s\n' "$dest"
+done
+IFS=$old_ifs
+
+printf 'vendor fish refresh complete\n'

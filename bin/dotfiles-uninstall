@@ -1,0 +1,88 @@
+#!/bin/sh
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+PURGE_LINKS=0
+
+usage() {
+    cat <<'EOF' >&2
+Usage: dotfiles-uninstall [--purge-links] [--force]
+
+Default behavior:
+- disable background sync
+- leave current bootstrapped links/files in place
+
+With --purge-links:
+- also remove bootstrapped symlinks that still point into this repo
+- remove vendored fish files tracked by .dotfiles-vendor-manifest
+- remove ~/.config/dotfiles/install.env
+EOF
+    exit 1
+}
+
+remove_link_if_matches() {
+    target=$1
+    expected=$2
+
+    if [ -L "$target" ] && [ "$(readlink "$target")" = "$expected" ]; then
+        rm -f "$target"
+        printf 'removed %s\n' "$target"
+    fi
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --purge-links)
+            PURGE_LINKS=1
+            ;;
+        --force)
+            FORCE_FLAG=--force
+            ;;
+        *)
+            usage
+            ;;
+    esac
+    shift
+done
+
+"$ROOT/install.sh" --disable-sync ${FORCE_FLAG:-}
+
+if [ "$PURGE_LINKS" -ne 1 ]; then
+    printf 'sync disabled; bootstrapped files left in place\n'
+    exit 0
+fi
+
+remove_link_if_matches "$HOME/.profile" "$ROOT/home/.profile"
+remove_link_if_matches "$HOME/.bash_profile" "$ROOT/home/.bash_profile"
+remove_link_if_matches "$HOME/.bashrc" "$ROOT/home/.bashrc"
+remove_link_if_matches "$HOME/.zprofile" "$ROOT/home/.zprofile"
+remove_link_if_matches "$HOME/.zshrc" "$ROOT/home/.zshrc"
+remove_link_if_matches "$HOME/.gitconfig" "$ROOT/home/.gitconfig"
+remove_link_if_matches "$HOME/.tmux.conf" "$ROOT/home/.tmux.conf"
+remove_link_if_matches "$HOME/.config/starship.toml" "$ROOT/config/starship.toml"
+remove_link_if_matches "$HOME/.config/git/config" "$ROOT/config/git/config"
+remove_link_if_matches "$HOME/.config/nvim" "$ROOT/config/nvim"
+remove_link_if_matches "$HOME/.config/fish/config.fish" "$ROOT/config/fish/config.fish"
+remove_link_if_matches "$HOME/.config/fish/fish_plugins" "$ROOT/config/fish/fish_plugins"
+
+for script in "$ROOT"/config/fish/conf.d/*.fish; do
+    [ -e "$script" ] || continue
+    name=$(basename "$script")
+    remove_link_if_matches "$HOME/.config/fish/conf.d/$name" "$script"
+done
+
+state_manifest="$HOME/.config/fish/.dotfiles-vendor-manifest"
+if [ -f "$state_manifest" ]; then
+    old_ifs=$IFS
+    IFS='
+'
+    for rel_path in $(cat "$state_manifest"); do
+        [ -n "$rel_path" ] || continue
+        rm -f "$HOME/.config/fish/$rel_path"
+    done
+    IFS=$old_ifs
+    rm -f "$state_manifest"
+fi
+
+rm -f "$HOME/.config/dotfiles/install.env"
+printf 'install state removed; backups remain under ~/.local/state/dotfiles-backups/\n'

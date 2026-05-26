@@ -1,0 +1,60 @@
+#!/bin/sh
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+INSTALL_ENV="$HOME/.config/dotfiles/install.env"
+
+DOTFILES_ROOT=
+DOTFILES_SYNC_INTERVAL=
+DOTFILES_SYNC_SERVICE_NAME=
+if [ -r "$INSTALL_ENV" ]; then
+    # shellcheck disable=SC1090
+    . "$INSTALL_ENV"
+fi
+
+ACTIVE_ROOT=${DOTFILES_ROOT:-$ROOT}
+SERVICE_NAME=${DOTFILES_SYNC_SERVICE_NAME:-com.buttercrab.dotfiles-sync}
+LOG_FILE="$HOME/.local/state/dotfiles-sync.log"
+
+printf 'root: %s\n' "$ACTIVE_ROOT"
+printf 'sync interval: %s\n' "${DOTFILES_SYNC_INTERVAL:-300}"
+
+if [ -d "$ACTIVE_ROOT/.git" ]; then
+    printf 'git head: '
+    git -C "$ACTIVE_ROOT" rev-parse --short HEAD
+    git -C "$ACTIVE_ROOT" status --short --branch
+else
+    printf 'git repo missing at %s\n' "$ACTIVE_ROOT"
+fi
+
+case "$(uname -s)" in
+    Darwin)
+        plist_path="$HOME/Library/LaunchAgents/$SERVICE_NAME.plist"
+        if [ -f "$plist_path" ]; then
+            printf 'sync: enabled (launchd)\n'
+            launchctl print "gui/$(id -u)/$SERVICE_NAME" 2>/dev/null | awk '
+                /state =/ || /last exit code =/ || /runs =/ || /path =/ { print }
+            '
+        else
+            printf 'sync: disabled (launchd plist missing)\n'
+        fi
+        ;;
+    Linux)
+        if command -v systemctl >/dev/null 2>&1; then
+            enabled=$(systemctl --user is-enabled dotfiles-sync.timer 2>/dev/null || true)
+            active=$(systemctl --user is-active dotfiles-sync.timer 2>/dev/null || true)
+            printf 'sync: %s / %s (systemd --user)\n' "${enabled:-disabled}" "${active:-inactive}"
+            systemctl --user list-timers dotfiles-sync.timer --all | sed -n '1,10p'
+        else
+            printf 'sync: unknown (systemctl missing)\n'
+        fi
+        ;;
+    *)
+        printf 'sync: unsupported OS %s\n' "$(uname -s)"
+        ;;
+esac
+
+if [ -f "$LOG_FILE" ]; then
+    printf 'log: %s\n' "$LOG_FILE"
+    tail -n 10 "$LOG_FILE"
+fi

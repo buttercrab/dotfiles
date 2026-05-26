@@ -39,6 +39,15 @@ To disable background sync:
 ./install.sh --disable-sync
 ```
 
+Helper commands:
+
+```sh
+~/dotfiles/bin/dotfiles-sync-enable
+~/dotfiles/bin/dotfiles-sync-disable
+~/dotfiles/bin/dotfiles-sync-status
+~/dotfiles/bin/dotfiles-uninstall
+```
+
 ## Auto Sync
 
 Auto-sync is opt-in. When enabled, it runs on load and every 5 minutes by default.
@@ -66,3 +75,15 @@ Private files under `~/.config/local` are not part of auto-sync.
 - macOS sync uses a user `LaunchAgent`, so it starts after user login.
 - Linux sync uses `systemd --user`; reboot persistence depends on the user manager and, when available, linger.
 - Background auto-commits are intentionally unsigned; keep personal identity and signing settings in `~/.config/local/git/config`.
+
+## Fish Vendor Maintenance
+
+Vendored fish plugin files under `vendor/fish/` are the offline source of truth.
+
+To refresh them intentionally from the current local fish runtime:
+
+```sh
+~/dotfiles/bin/dotfiles-vendor-fish-update
+```
+
+The authoritative vendored file list lives in `vendor/fish/manifest.txt`.
