@@ -1,1 +1,12 @@
 .DS_Store
+*.bak
+*.orig
+*.rej
+*.swp
+*.swo
+
+config/fish/completions/
+config/fish/functions/
+config/fish/fish_variables
+config/fish/conf.d/fish_frozen_*.fish
+config/fish/config.fish.backup

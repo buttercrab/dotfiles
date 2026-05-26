@@ -1,0 +1,9 @@
+completions/fisher.fish
+completions/nvm.fish
+conf.d/nvm.fish
+functions/_nvm_index_update.fish
+functions/_nvm_list.fish
+functions/_nvm_version_activate.fish
+functions/_nvm_version_deactivate.fish
+functions/fisher.fish
+functions/nvm.fish
