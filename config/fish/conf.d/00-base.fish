@@ -23,3 +23,44 @@ end
 set -gx EDITOR nvim
 set -gx VISUAL $EDITOR
 set -gx NVM_DIR "$HOME/.nvm"
+if not set -q RUSTFLAGS
+    set -gx RUSTFLAGS "-Z threads=12"
+end
+
+function __dotfiles_locale_available --argument-names candidate
+    test -n "$candidate"; or return 1
+    locale -a 2>/dev/null | string match -qi -- "$candidate"
+end
+
+set -l __dotfiles_locale_candidate
+if set -q LC_ALL
+    if __dotfiles_locale_available "$LC_ALL"
+        set __dotfiles_locale_candidate "$LC_ALL"
+    end
+end
+
+if test -z "$__dotfiles_locale_candidate"
+    if set -q LANG
+        if __dotfiles_locale_available "$LANG"
+            set __dotfiles_locale_candidate "$LANG"
+        end
+    end
+end
+
+if test -z "$__dotfiles_locale_candidate"
+    for candidate in en_US.UTF-8 en_US.utf8 C.UTF-8
+        if __dotfiles_locale_available "$candidate"
+            set __dotfiles_locale_candidate "$candidate"
+            break
+        end
+    end
+end
+
+if test -n "$__dotfiles_locale_candidate"
+    set -gx LANG "$__dotfiles_locale_candidate"
+    set -gx LC_CTYPE "$__dotfiles_locale_candidate"
+    set -gx LC_ALL "$__dotfiles_locale_candidate"
+    set -gx LANGUAGE "$__dotfiles_locale_candidate"
+end
+
+set -e __dotfiles_locale_candidate

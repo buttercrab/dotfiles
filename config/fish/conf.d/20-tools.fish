@@ -2,6 +2,10 @@ if command -sq starship
     starship init fish | source
 end
 
+if command -sq pyenv
+    pyenv init - | source
+end
+
 if command -sq zoxide
     zoxide init fish | source
     alias cd=z
