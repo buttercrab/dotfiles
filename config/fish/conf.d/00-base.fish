@@ -10,6 +10,11 @@ __dotfiles_add_path "$HOME/.local/bin"
 __dotfiles_add_path "$HOME/.cargo/bin"
 __dotfiles_add_path "$HOME/go/bin"
 
+if not set -q BUN_INSTALL
+    set -gx BUN_INSTALL "$HOME/.bun"
+end
+__dotfiles_add_path "$BUN_INSTALL/bin"
+
 if test -d "$HOME/.pyenv"
     set -gx PYENV_ROOT "$HOME/.pyenv"
     __dotfiles_add_path "$PYENV_ROOT/bin"
