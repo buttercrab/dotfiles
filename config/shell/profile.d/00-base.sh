@@ -13,7 +13,15 @@ fi
 export EDITOR="${EDITOR:-nvim}"
 export VISUAL="${VISUAL:-$EDITOR}"
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-export RUSTFLAGS="${RUSTFLAGS:--Z threads=12}"
+
+dotfiles_rustc_is_nightly() {
+    command -v rustc >/dev/null 2>&1 || return 1
+    rustc -vV 2>/dev/null | grep -Eq '^release: .*nightly'
+}
+
+if [ -z "${RUSTFLAGS+x}" ] && dotfiles_rustc_is_nightly; then
+    export RUSTFLAGS="-Z threads=12"
+fi
 
 dotfiles_pick_locale() {
     command -v locale >/dev/null 2>&1 || return 1
