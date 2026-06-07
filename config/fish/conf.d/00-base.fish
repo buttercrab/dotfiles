@@ -29,9 +29,9 @@ function __dotfiles_rustc_is_nightly
     rustc -vV 2>/dev/null | string match -qr '^release: .*nightly'
 end
 
-if not set -q RUSTFLAGS; and __dotfiles_rustc_is_nightly
-    set -gx RUSTFLAGS "-Z threads=12"
-end
+# if not set -q RUSTFLAGS; and __dotfiles_rustc_is_nightly
+#     set -gx RUSTFLAGS "-Z threads=12"
+# end
 
 function __dotfiles_locale_available --argument-names candidate
     test -n "$candidate"; or return 1
