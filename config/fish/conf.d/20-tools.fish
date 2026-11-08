@@ -2,7 +2,9 @@ if command -sq starship
     starship init fish | source
 end
 
-if command -sq pyenv
+# Only pay for pyenv (~70ms) when it manages at least one Python version.
+set -l __dotfiles_pyenv_versions $HOME/.pyenv/versions/*
+if command -sq pyenv; and set -q __dotfiles_pyenv_versions[1]
     # --no-rehash: skip regenerating shims on every shell start (run `pyenv rehash` after installs).
     pyenv init - --no-rehash fish | source
 end
