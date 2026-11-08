@@ -3,7 +3,8 @@ if command -sq starship
 end
 
 if command -sq pyenv
-    pyenv init - | source
+    # --no-rehash: skip regenerating shims on every shell start (run `pyenv rehash` after installs).
+    pyenv init - --no-rehash fish | source
 end
 
 if command -sq zoxide
@@ -15,7 +16,8 @@ if command -sq fzf
     fzf --fish | source
 end
 
-if command -sq direnv
+# Homebrew ships its own direnv hook in vendor_conf.d; only hook here where none exists.
+if command -sq direnv; and not path is -f $__fish_vendor_confdirs/direnv.fish
     direnv hook fish | source
 end
 
