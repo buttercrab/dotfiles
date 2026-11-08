@@ -5,4 +5,5 @@ if test (uname) = Linux
         __dotfiles_add_path /home/linuxbrew/.linuxbrew/bin
         __dotfiles_add_path /home/linuxbrew/.linuxbrew/sbin
     end
+    __dotfiles_front_user_paths
 end

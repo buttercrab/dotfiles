@@ -28,4 +28,5 @@ if test (uname) = Darwin
         __dotfiles_add_path /usr/local/bin
         __dotfiles_add_path /usr/local/sbin
     end
+    __dotfiles_front_user_paths
 end
