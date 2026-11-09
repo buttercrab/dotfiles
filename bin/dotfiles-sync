@@ -28,6 +28,15 @@ log() {
 }
 
 cleanup() {
+    # Any exit between stash and restore (failed fetch, rebase or bootstrap) must still
+    # put the local edits back, or they sit in the stash list until someone notices.
+    if [ "${stash_pending:-0}" -eq 1 ]; then
+        stash_pending=0
+        log "restore local repo changes after failure"
+        if ! git -C "$ROOT" stash pop "$stash_ref" >>"$LOG_FILE" 2>&1; then
+            log "error stash restore failed; changes kept in $stash_ref (dotfiles-sync-autostash)"
+        fi
+    fi
     rm -rf "$LOCK_DIR" 2>/dev/null || true
 }
 
@@ -132,6 +141,7 @@ EOF
 }
 
 stash_ref=
+stash_pending=0
 
 stash_allowed_changes() {
     if ! has_allowed_changes; then
@@ -149,6 +159,7 @@ stash_allowed_changes() {
 
     if [ -n "$stash_after" ] && [ "$stash_after" != "$stash_before" ]; then
         stash_ref=stash@{0}
+        stash_pending=1
     fi
 }
 
@@ -156,6 +167,7 @@ restore_stash() {
     [ -n "$stash_ref" ] || return 0
 
     log "restore local repo changes"
+    stash_pending=0
     if ! git stash pop "$stash_ref" >>"$LOG_FILE" 2>&1; then
         log "error stash restore failed; manual resolution required"
         exit 1
@@ -188,7 +200,8 @@ commit_allowed_changes() {
 }
 
 acquire_lock
-trap cleanup EXIT INT TERM HUP
+trap cleanup EXIT
+trap 'exit 1' INT TERM HUP
 
 cd "$ROOT"
 
