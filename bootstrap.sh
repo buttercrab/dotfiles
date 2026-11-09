@@ -245,6 +245,8 @@ link_path "$ROOT/config/git/config" "$HOME/.config/git/config" ".config/git/conf
 link_path "$ROOT/config/nvim" "$HOME/.config/nvim" ".config/nvim"
 link_path "$ROOT/config/fish/config.fish" "$HOME/.config/fish/config.fish" ".config/fish/config.fish"
 link_path "$ROOT/config/fish/fish_plugins" "$HOME/.config/fish/fish_plugins" ".config/fish/fish_plugins"
+# `git wt`: global worktree convention used by every coding agent (see bin/git-wt).
+link_path "$ROOT/bin/git-wt" "$HOME/.local/bin/git-wt" ".local/bin/git-wt"
 
 for script in "$ROOT"/config/fish/conf.d/*.fish; do
     [ -e "$script" ] || continue

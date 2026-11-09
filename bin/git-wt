@@ -17,12 +17,15 @@
 #   git wt doctor [<dir>...]         list worktrees outside the convention
 #                                    (scans $WORKTREE_SCAN_DIRS, default ~/Development/Github)
 #   git wt root                      print $WORKTREE_ROOT
+#   git wt setup [<dir>]             (re)write per-repo shared files (Rust: shared cargo build-dir)
 #   git wt claude-hook create|remove (stdin: Claude Code hook JSON)
 #
 # Defaults: new branch wt/<name> (claude/<name> from the Claude hook, prefix via
 # WORKTREE_BRANCH_PREFIX), based on a freshly fetched origin/<default-branch>, else HEAD.
 # Gitignored files matching the repo's .worktreeinclude are copied in (Claude skips
 # .worktreeinclude when a WorktreeCreate hook is set, so this replaces it).
+# Rust repos also get $WORKTREE_ROOT/<repo>/.cargo/config.toml with build-dir pointing
+# at the main checkout's target/, so every worktree reuses its compiled dependencies.
 set -euo pipefail
 
 ROOT="${WORKTREE_ROOT:-$HOME/Development/worktrees}"
@@ -80,6 +83,24 @@ copy_includes() {
     [ "$n" -eq 0 ] || log "copied $n file(s) from .worktreeinclude"
 }
 
+# Rust repos: all worktrees of <repo> share compiled intermediates with the main
+# checkout through cargo's build-dir. Cargo discovers $ROOT/<repo>/.cargo/config.toml
+# by walking up from any worktree, so one file per repo covers all of its worktrees.
+# Each worktree keeps its own small target/ for final binaries; concurrent builds
+# take turns on the build-dir lock. Opt out per repo by deleting the marker line.
+CARGO_MARKER="# managed by git-wt (shared cargo build-dir)"
+ensure_cargo_build_dir() {
+    local repo=$1 cfg
+    [ -f "$repo/Cargo.toml" ] || return 0
+    cfg="$ROOT/$(repo_name "$repo")/.cargo/config.toml"
+    if [ -f "$cfg" ] && ! grep -qF "$CARGO_MARKER" "$cfg"; then
+        return 0 # hand-written config: leave it alone
+    fi
+    mkdir -p "$(dirname "$cfg")"
+    printf '%s\n[build]\nbuild-dir = "%s/target"\n' "$CARGO_MARKER" "$repo" >"$cfg.tmp"
+    mv "$cfg.tmp" "$cfg"
+}
+
 cmd_add() {
     local dir=. branch='' base='' name
     while [ $# -gt 0 ]; do
@@ -88,7 +109,7 @@ cmd_add() {
         -b) branch=$2; shift 2 ;;
         --base) base=$2; shift 2 ;;
         --from-head) base=HEAD; shift ;;
-        -h | --help) sed -n '2,26p' "$0" >&2; exit 0 ;;
+        -h | --help) awk 'NR>1 && /^set -euo/{exit} NR>1' "$0" >&2; exit 0 ;;
         -*) die "unknown option: $1" ;;
         *) break ;;
         esac
@@ -110,7 +131,15 @@ cmd_add() {
         git -C "$repo" worktree add -b "$branch" "$path" "$base" >&2
     fi
     copy_includes "$repo" "$path"
+    ensure_cargo_build_dir "$repo"
     printf '%s\n' "$path"
+}
+
+cmd_setup() { # (re)write per-repo shared files for the repo containing $1 (default .)
+    local repo
+    repo=$(main_repo "${1:-.}")
+    ensure_cargo_build_dir "$repo"
+    log "set up $(repo_name "$repo")"
 }
 
 cmd_rm() {
@@ -198,7 +227,8 @@ path) shift; [ $# -eq 1 ] || die "usage: git wt path <name>"
 ls | list) cmd_ls ;;
 doctor) shift; cmd_doctor "$@" ;;
 root) printf '%s\n' "$ROOT" ;;
+setup) shift; cmd_setup "$@" ;;
 claude-hook) shift; cmd_claude_hook "$@" ;;
-"" | -h | --help | help) sed -n '2,26p' "$0" ;;
+"" | -h | --help | help) awk 'NR>1 && /^set -euo/{exit} NR>1' "$0" ;;
 *) die "unknown command: $1 (see git wt --help)" ;;
 esac

@@ -26,15 +26,6 @@ set -gx EDITOR nvim
 set -gx VISUAL $EDITOR
 set -gx NVM_DIR "$HOME/.nvm"
 
-function __dotfiles_rustc_is_nightly
-    command -q rustc; or return 1
-    rustc -vV 2>/dev/null | string match -qr '^release: .*nightly'
-end
-
-# if not set -q RUSTFLAGS; and __dotfiles_rustc_is_nightly
-#     set -gx RUSTFLAGS "-Z threads=12"
-# end
-
 # Locale: set LANG only. LC_ALL overrides every LC_* category and is meant for one-off debugging,
 # so never set it here; just drop inherited values the system can't load (e.g. LC_CTYPE=UTF-8 over ssh).
 set -g __dotfiles_locales (locale -a 2>/dev/null)

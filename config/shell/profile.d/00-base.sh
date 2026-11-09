@@ -14,19 +14,6 @@ export EDITOR="${EDITOR:-nvim}"
 export VISUAL="${VISUAL:-$EDITOR}"
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 
-dotfiles_rustc_is_nightly() {
-    command -v rustc >/dev/null 2>&1 || return 1
-    rustc -vV 2>/dev/null | grep -Eq '^release: .*nightly'
-}
-
-# Disabled (matches fish 00-base.fish): the check runs in $HOME where the default
-# toolchain is nightly, but repos pinned to stable via rust-toolchain.toml then fail
-# with "the option `Z` is only accepted on the nightly compiler". A RUSTFLAGS env var
-# also silently overrides every build.rustflags / target.*.rustflags in cargo config.
-# if [ -z "${RUSTFLAGS+x}" ] && dotfiles_rustc_is_nightly; then
-#     export RUSTFLAGS="-Z threads=12"
-# fi
-
 dotfiles_pick_locale() {
     command -v locale >/dev/null 2>&1 || return 1
     for candidate in "$@"; do
