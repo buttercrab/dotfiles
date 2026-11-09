@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# cargo-sweep-all: keep Rust target/ dirs from growing forever.
+#
+# With `git wt`, every worktree of a Rust repo shares the main checkout's target/
+# as its cargo build-dir, so that directory accumulates artifacts from every branch.
+# This removes artifacts unused for $SWEEP_DAYS days (default 14), then caps each
+# target/ at $SWEEP_MAXSIZE (default 40GB, oldest first), for every Cargo project with
+# a target/ under $SWEEP_DIRS (default ~/Development/Github and ~/Development/worktrees).
+#
+# Usage:
+#   cargo-sweep-all            run now (add --dry-run to only report)
+#   cargo-sweep-all install    run weekly (Sunday 12:00) via a macOS LaunchAgent
+#   cargo-sweep-all uninstall  remove the LaunchAgent
+# Log: ~/Library/Logs/cargo-sweep-all.log when run by the LaunchAgent.
+set -uo pipefail
+
+export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+LABEL="${CARGO_SWEEP_LABEL:-com.$(id -un).cargo-sweep-all}"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+LOG="$HOME/Library/Logs/cargo-sweep-all.log"
+
+case "${1:-}" in
+install)
+    self=$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")
+    mkdir -p "$(dirname "$PLIST")" "$(dirname "$LOG")"
+    cat >"$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$LABEL</string>
+  <key>ProgramArguments</key><array><string>$self</string></array>
+  <key>StartCalendarInterval</key><dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+  <key>LowPriorityIO</key><true/>
+  <key>Nice</key><integer>10</integer>
+  <key>StandardOutPath</key><string>$LOG</string>
+  <key>StandardErrorPath</key><string>$LOG</string>
+</dict>
+</plist>
+EOF
+    launchctl bootout "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || true
+    launchctl bootstrap "gui/$(id -u)" "$PLIST"
+    echo "installed $PLIST (weekly, Sunday 12:00; log $LOG)"
+    exit 0
+    ;;
+uninstall)
+    launchctl bootout "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || true
+    rm -f "$PLIST"
+    echo "removed $PLIST"
+    exit 0
+    ;;
+-h | --help)
+    awk 'NR>1 && /^set -uo/{exit} NR>1' "$0"
+    exit 0
+    ;;
+esac
+
+dry=()
+[ "${1:-}" = "--dry-run" ] && dry=(--dry-run)
+command -v cargo-sweep >/dev/null || { echo "cargo-sweep not installed (cargo install cargo-sweep)" >&2; exit 1; }
+
+DAYS="${SWEEP_DAYS:-14}"
+MAX="${SWEEP_MAXSIZE:-40GB}"
+read -r -a dirs <<<"${SWEEP_DIRS:-$HOME/Development/Github $HOME/Development/worktrees}"
+
+echo "== $(date '+%F %T') cargo-sweep-all ${dry[*]:-} (unused > ${DAYS}d, cap ${MAX})"
+before=0 after=0
+for d in "${dirs[@]}"; do
+    [ -d "$d" ] || continue
+    while IFS= read -r toml; do
+        proj=$(dirname "$toml")
+        [ -d "$proj/target" ] || continue
+        kb=$(du -sk "$proj/target" | cut -f1)
+        before=$((before + kb))
+        echo "-- $proj ($((kb / 1024)) MB)"
+        cargo sweep "${dry[@]}" --time "$DAYS" "$proj" 2>&1 | grep -E 'clean|error' || true
+        cargo sweep "${dry[@]}" --maxsize "$MAX" "$proj" 2>&1 | grep -E 'clean|error' | grep -v 'nothing' || true
+        after=$((after + $(du -sk "$proj/target" | cut -f1)))
+    done < <(find "$d" -maxdepth 5 -name Cargo.toml -not -path '*/target/*' -not -path '*/node_modules/*' 2>/dev/null | sort)
+done
+echo "== total target/: $((before / 1024)) MB -> $((after / 1024)) MB"

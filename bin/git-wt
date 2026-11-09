@@ -18,6 +18,11 @@
 #                                    (scans $WORKTREE_SCAN_DIRS, default ~/Development/Github)
 #   git wt root                      print $WORKTREE_ROOT
 #   git wt setup [<dir>]             (re)write per-repo shared files (Rust: shared cargo build-dir)
+#   git wt prune [--dry-run] [<dir>] delete agent branches (claude/ codex/ wt/ worktree-*; set
+#                                    WORKTREE_PRUNE_PATTERNS) whose work has provably landed:
+#                                    merged into origin's default branch, tip == a merged PR's
+#                                    head (gh), or every commit already upstream. Branches
+#                                    checked out in any worktree are never touched.
 #   git wt claude-hook create|remove (stdin: Claude Code hook JSON)
 #
 # Defaults: new branch wt/<name> (claude/<name> from the Claude hook, prefix via
@@ -190,6 +195,67 @@ cmd_doctor() {
     log "all worktrees are under $ROOT"
 }
 
+cmd_prune() {
+    local dry=0 dir=.
+    while [ $# -gt 0 ]; do
+        case "$1" in
+        -n | --dry-run) dry=1; shift ;;
+        *) dir=$1; shift ;;
+        esac
+    done
+    local repo base prs checked patterns b tip reason n=0 kept=0
+    repo=$(main_repo "$dir")
+    GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes -o ConnectTimeout=5" \
+        git -C "$repo" fetch --quiet --prune origin 2>/dev/null || log "fetch failed; using local refs"
+    base=$(git -C "$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) ||
+        die "$(repo_name "$repo"): no origin/HEAD (run: git remote set-head origin --auto)"
+    prs=""
+    if command -v gh >/dev/null 2>&1; then
+        prs=$(cd "$repo" && gh pr list --state merged --limit 1000 \
+            --json number,headRefName,headRefOid --jq '.[] | "\(.headRefName) \(.headRefOid) \(.number)"' 2>/dev/null) ||
+            log "gh unavailable; only checking git ancestry"
+    fi
+    checked=$(git -C "$repo" worktree list --porcelain | sed -n 's|^branch refs/heads/||p')
+    read -r -a patterns <<<"${WORKTREE_PRUNE_PATTERNS:-claude/* codex/* wt/* worktree-*}"
+
+    while IFS= read -r b; do
+        [ -n "$b" ] || continue
+        if printf '%s\n' "$checked" | grep -qxF "$b"; then continue; fi
+        tip=$(git -C "$repo" rev-parse "refs/heads/$b")
+        reason=""
+        if git -C "$repo" merge-base --is-ancestor "$tip" "$base"; then
+            reason="merged into $base"
+        else
+            local line pr_oid pr_num
+            line=$(printf '%s\n' "$prs" | awk -v b="$b" '$1==b' | head -1)
+            if [ -n "$line" ]; then
+                pr_oid=$(printf '%s' "$line" | cut -d' ' -f2)
+                pr_num=$(printf '%s' "$line" | cut -d' ' -f3)
+                if [ "$pr_oid" = "$tip" ] ||
+                    { git -C "$repo" cat-file -e "$pr_oid^{commit}" 2>/dev/null &&
+                        git -C "$repo" merge-base --is-ancestor "$tip" "$pr_oid"; }; then
+                    reason="PR #$pr_num merged"
+                fi
+            fi
+            if [ -z "$reason" ] && ! git -C "$repo" cherry "$base" "$tip" | grep -q '^+'; then
+                reason="all commits already in $base"
+            fi
+        fi
+        if [ -z "$reason" ]; then
+            kept=$((kept + 1))
+            continue
+        fi
+        n=$((n + 1))
+        if [ "$dry" -eq 1 ]; then
+            printf 'would delete %s (%s) - %s\n' "$b" "${tip:0:9}" "$reason"
+        else
+            git -C "$repo" branch -D "$b" >/dev/null
+            printf 'deleted %s (was %s) - %s\n' "$b" "${tip:0:9}" "$reason"
+        fi
+    done < <(git -C "$repo" for-each-ref --format='%(refname:short)' "${patterns[@]/#/refs/heads/}")
+    log "$(repo_name "$repo"): $n pruned$([ "$dry" -eq 1 ] && echo ' (dry run)'), $kept kept (unmerged work)"
+}
+
 json_field() { # json_field <key>  (reads JSON on stdin)
     if command -v jq >/dev/null 2>&1; then
         jq -r --arg k "$1" '.[$k] // empty'
@@ -228,6 +294,7 @@ ls | list) cmd_ls ;;
 doctor) shift; cmd_doctor "$@" ;;
 root) printf '%s\n' "$ROOT" ;;
 setup) shift; cmd_setup "$@" ;;
+prune) shift; cmd_prune "$@" ;;
 claude-hook) shift; cmd_claude_hook "$@" ;;
 "" | -h | --help | help) awk 'NR>1 && /^set -euo/{exit} NR>1' "$0" ;;
 *) die "unknown command: $1 (see git wt --help)" ;;

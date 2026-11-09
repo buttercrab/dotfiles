@@ -247,6 +247,8 @@ link_path "$ROOT/config/fish/config.fish" "$HOME/.config/fish/config.fish" ".con
 link_path "$ROOT/config/fish/fish_plugins" "$HOME/.config/fish/fish_plugins" ".config/fish/fish_plugins"
 # `git wt`: global worktree convention used by every coding agent (see bin/git-wt).
 link_path "$ROOT/bin/git-wt" "$HOME/.local/bin/git-wt" ".local/bin/git-wt"
+# Weekly Rust target/ cleanup; enable the schedule with `cargo-sweep-all install`.
+link_path "$ROOT/bin/cargo-sweep-all" "$HOME/.local/bin/cargo-sweep-all" ".local/bin/cargo-sweep-all"
 
 for script in "$ROOT"/config/fish/conf.d/*.fish; do
     [ -e "$script" ] || continue
