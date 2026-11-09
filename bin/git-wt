@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+# git-wt: one place for every git worktree, whoever creates it.
+#
+#   $WORKTREE_ROOT/<repo>/<name>      (default WORKTREE_ROOT=$HOME/Development/worktrees)
+#
+# Humans and coding agents (Claude Code, Codex, Cursor, Gemini, OpenCode, ...) should
+# create worktrees with `git wt add`, never `git worktree add <arbitrary path>`.
+# Claude Code is wired to it through WorktreeCreate/WorktreeRemove hooks
+# (`git wt claude-hook create|remove`), which also covers subagent worktrees.
+#
+# Usage:
+#   git wt add [-C <dir>] [-b <branch>] [--base <ref> | --from-head] <name>
+#                                    create; prints the new path on stdout (nothing else)
+#   git wt rm <path|name>            remove the worktree (branch is kept)
+#   git wt path <name>               print where <name> would live for this repo
+#   git wt ls                        list this repo's worktrees
+#   git wt doctor [<dir>...]         list worktrees outside the convention
+#                                    (scans $WORKTREE_SCAN_DIRS, default ~/Development/Github)
+#   git wt root                      print $WORKTREE_ROOT
+#   git wt claude-hook create|remove (stdin: Claude Code hook JSON)
+#
+# Defaults: new branch wt/<name> (claude/<name> from the Claude hook, prefix via
+# WORKTREE_BRANCH_PREFIX), based on a freshly fetched origin/<default-branch>, else HEAD.
+# Gitignored files matching the repo's .worktreeinclude are copied in (Claude skips
+# .worktreeinclude when a WorktreeCreate hook is set, so this replaces it).
+set -euo pipefail
+
+ROOT="${WORKTREE_ROOT:-$HOME/Development/worktrees}"
+
+log() { printf 'git-wt: %s\n' "$*" >&2; }
+die() { log "$*"; exit 1; }
+
+# Absolute path of the main checkout of the repo that contains $1.
+main_repo() {
+    local common
+    common=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
+        die "not inside a git repository: $1"
+    if [ "$(basename "$common")" = ".git" ]; then
+        dirname "$common"
+    else
+        printf '%s\n' "$common" # bare repository
+    fi
+}
+
+repo_name() {
+    local n
+    n=$(basename "$1")
+    printf '%s\n' "${n%.git}"
+}
+
+sanitize() {
+    local n
+    n=$(printf '%s' "$1" | tr '/ :' '---' | tr -cd 'A-Za-z0-9._-')
+    case "$n" in "" | . | ..) die "invalid worktree name: '$1'" ;; esac
+    printf '%s\n' "$n"
+}
+
+# origin/<default-branch>, fetched (non-interactive, short timeout); falls back to HEAD.
+default_base() {
+    local repo=$1 def
+    def=$(git -C "$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) || {
+        printf 'HEAD\n'
+        return
+    }
+    GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes -o ConnectTimeout=5" \
+        git -C "$repo" fetch --quiet origin "${def#origin/}" >&2 2>/dev/null ||
+        log "fetch of $def failed; using the local copy"
+    printf '%s\n' "$def"
+}
+
+copy_includes() {
+    local repo=$1 dest=$2 f n=0
+    [ -f "$repo/.worktreeinclude" ] || return 0
+    while IFS= read -r -d '' f; do
+        mkdir -p "$dest/$(dirname "$f")"
+        cp -p "$repo/$f" "$dest/$f"
+        n=$((n + 1))
+    done < <(git -C "$repo" ls-files -z --others --ignored --exclude-from="$repo/.worktreeinclude" |
+        git -C "$repo" check-ignore -z --stdin --no-index 2>/dev/null || true)
+    [ "$n" -eq 0 ] || log "copied $n file(s) from .worktreeinclude"
+}
+
+cmd_add() {
+    local dir=. branch='' base='' name
+    while [ $# -gt 0 ]; do
+        case "$1" in
+        -C) dir=$2; shift 2 ;;
+        -b) branch=$2; shift 2 ;;
+        --base) base=$2; shift 2 ;;
+        --from-head) base=HEAD; shift ;;
+        -h | --help) sed -n '2,26p' "$0" >&2; exit 0 ;;
+        -*) die "unknown option: $1" ;;
+        *) break ;;
+        esac
+    done
+    [ $# -eq 1 ] || die "usage: git wt add [-C dir] [-b branch] [--base ref|--from-head] <name>"
+    name=$(sanitize "$1")
+
+    local repo path
+    repo=$(main_repo "$dir")
+    path="$ROOT/$(repo_name "$repo")/$name"
+    [ ! -e "$path" ] || die "already exists: $path"
+    branch=${branch:-${WORKTREE_BRANCH_PREFIX:-wt}/$name}
+
+    mkdir -p "$(dirname "$path")"
+    if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
+        git -C "$repo" worktree add "$path" "$branch" >&2
+    else
+        [ -n "$base" ] || base=$(default_base "$repo")
+        git -C "$repo" worktree add -b "$branch" "$path" "$base" >&2
+    fi
+    copy_includes "$repo" "$path"
+    printf '%s\n' "$path"
+}
+
+cmd_rm() {
+    [ $# -eq 1 ] || die "usage: git wt rm <path|name>"
+    local path=$1 repo
+    if [ ! -d "$path" ] && [ "${path#/}" = "$path" ]; then
+        repo=$(main_repo .)
+        path="$ROOT/$(repo_name "$repo")/$(sanitize "$path")"
+    fi
+    if [ ! -d "$path" ]; then
+        log "already gone: $path"
+        exit 0
+    fi
+    path=$(cd "$path" && pwd -P)
+    repo=$(main_repo "$path")
+    [ "$path" != "$(cd "$repo" && pwd -P)" ] || die "refusing to remove the main checkout: $path"
+
+    if ! git -C "$repo" worktree remove --force "$path" >&2; then
+        case "$path" in
+        "$ROOT"/*) rm -rf "$path"; git -C "$repo" worktree prune >&2 ;;
+        *) die "git worktree remove failed for $path" ;;
+        esac
+    fi
+    rmdir "$(dirname "$path")" 2>/dev/null || true
+    log "removed $path (branch kept)"
+}
+
+cmd_ls() { git -C "$(main_repo .)" worktree list; }
+
+cmd_doctor() {
+    local dirs=("$@") d g repo out=
+    [ ${#dirs[@]} -gt 0 ] || read -r -a dirs <<<"${WORKTREE_SCAN_DIRS:-$HOME/Development/Github}"
+    for d in "${dirs[@]}"; do
+        for g in "$d"/*/.git; do
+            [ -d "$g" ] || continue
+            repo=$(dirname "$g")
+            out+=$(git -C "$repo" worktree list --porcelain | awk -v r="$repo" -v root="$ROOT/" '
+                /^worktree /{p=substr($0,10)} /^prunable/{pr=1}
+                /^$/{ if (p!=r && index(p,root)!=1) print (pr?"[prunable] ":"") r " -> " p; p=""; pr=0 }')
+            out+=$'\n'
+        done
+    done
+    out=$(printf '%s' "$out" | grep . || true)
+    if [ -n "$out" ]; then
+        printf '%s\n' "$out"
+        return 1
+    fi
+    log "all worktrees are under $ROOT"
+}
+
+json_field() { # json_field <key>  (reads JSON on stdin)
+    if command -v jq >/dev/null 2>&1; then
+        jq -r --arg k "$1" '.[$k] // empty'
+    else
+        python3 -c 'import json,sys; print(json.load(sys.stdin).get(sys.argv[1]) or "")' "$1"
+    fi
+}
+
+cmd_claude_hook() {
+    local input
+    input=$(cat)
+    case "${1:-}" in
+    create)
+        local name cwd
+        name=$(json_field name <<<"$input")
+        cwd=$(json_field cwd <<<"$input")
+        [ -n "$name" ] || die "hook input has no name"
+        WORKTREE_BRANCH_PREFIX="${WORKTREE_BRANCH_PREFIX:-claude}" cmd_add -C "${cwd:-.}" "$name"
+        ;;
+    remove)
+        local path
+        path=$(json_field worktree_path <<<"$input")
+        [ -n "$path" ] || die "hook input has no worktree_path"
+        cmd_rm "$path"
+        ;;
+    *) die "usage: git wt claude-hook create|remove" ;;
+    esac
+}
+
+case "${1:-}" in
+add) shift; cmd_add "$@" ;;
+rm | remove) shift; cmd_rm "$@" ;;
+path) shift; [ $# -eq 1 ] || die "usage: git wt path <name>"
+    printf '%s\n' "$ROOT/$(repo_name "$(main_repo .)")/$(sanitize "$1")" ;;
+ls | list) cmd_ls ;;
+doctor) shift; cmd_doctor "$@" ;;
+root) printf '%s\n' "$ROOT" ;;
+claude-hook) shift; cmd_claude_hook "$@" ;;
+"" | -h | --help | help) sed -n '2,26p' "$0" ;;
+*) die "unknown command: $1 (see git wt --help)" ;;
+esac
