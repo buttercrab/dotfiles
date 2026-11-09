@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # cargo-sweep-all: keep Rust target/ dirs from growing forever.
 #
-# With `git wt`, every worktree of a Rust repo shares the main checkout's target/
-# as its cargo build-dir, so that directory accumulates artifacts from every branch.
+# With `git wt`, every worktree of a Rust repo gets its own target/, cloned from the
+# main checkout's (copy-on-write), and each one grows as its branch is rebuilt.
 # This removes artifacts unused for $SWEEP_DAYS days (default 14), then caps each
 # target/ at $SWEEP_MAXSIZE (default 40GB, oldest first), for every Cargo project with
 # a target/ under $SWEEP_DIRS (default ~/Development/Github and ~/Development/worktrees).
